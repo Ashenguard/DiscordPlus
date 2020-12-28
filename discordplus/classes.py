@@ -1,5 +1,8 @@
 import asyncio
-from typing import Optional, Union, Tuple
+import importlib
+import inspect
+import os
+from typing import Optional, Union
 
 import discord
 from discord.ext import commands
@@ -8,7 +11,7 @@ from discordplus.lib import format_exception
 
 
 class BotPlus(commands.Bot):
-    def __init__(self, command_prefix, log_channel_id, help_command=commands.DefaultHelpCommand, description=None, **options):
+    def __init__(self, command_prefix, log_channel_id, help_command=commands.DefaultHelpCommand(), description=None, **options):
         super().__init__(command_prefix=command_prefix, help_command=help_command, description=description, **options)
         self.log_channel_id = log_channel_id
 
@@ -105,3 +108,24 @@ class BotPlus(commands.Bot):
     async def log(self, content=None, *, tts=False, embed=None, file=None, files=None, delete_after=None, nonce=None, allowed_mentions=None):
         channel = self.get_channel(self.log_channel_id)
         await self.try_send(channel, content, tts=tts, embed=embed, file=file, files=files, delete_after=delete_after, nonce=nonce, allowed_mentions=allowed_mentions)
+
+    def load_extensions(self, *files: str):
+        for file in files:
+            if os.path.isdir(file):
+                within_files = [f'{file}/{within_file}' for within_file in os.listdir(file) if os.path.isfile(within_file)]
+                self.load_extensions(*within_files)
+            else:
+                importlib.import_module(file.replace('/', '.').replace('\\', '.'))
+
+    # Decorators
+    def cog(self, cls):
+        if issubclass(cls, CogPlus):
+            self.cogs[cls.qualified_name] = cls(self)
+            self.add_cog(self.cogs[cls.qualified_name])
+        else:
+            raise TypeError(f'BotPlus.cog only accept a sub-class of "CogPlus" not a "{type(cls)}"')
+
+
+class CogPlus(commands.Cog):
+    def __init__(self, bot: BotPlus):
+        self.bot = bot
