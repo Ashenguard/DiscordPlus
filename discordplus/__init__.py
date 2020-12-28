@@ -1,1 +1,1 @@
-from .classes import BotPlus
+from .classes import BotPlus, CogPlus
