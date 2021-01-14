@@ -1,6 +1,8 @@
+import inspect
+import traceback
+
 import re
 import sys
-import traceback
 from typing import Union
 
 
@@ -22,6 +24,16 @@ def extract_number(text, required_pattern='\d+', cast_float: bool = False) -> Un
         return cast(number)
     except Exception:
         return 0
+
+
+def async_wrapper(func):
+    if inspect.iscoroutinefunction(func):
+        return func
+
+    async def wrap(*args, **kwargs):
+        return func(*args, **kwargs)
+
+    return wrap
 
 
 def print_traceback(exception, *, message='Execute failed'):

@@ -1,1 +1,1 @@
-from .emotes import People
+from .__emotes import *

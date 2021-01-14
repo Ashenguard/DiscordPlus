@@ -1,17 +1,16 @@
-import asyncio
 import importlib
-import inspect
-import os
-from typing import Optional, Union
 
+import asyncio
 import discord
+import os
 from discord.ext import commands
+from typing import Optional, Union
 
 from discordplus.lib import format_exception
 
 
 class BotPlus(commands.Bot):
-    def __init__(self, command_prefix, log_channel_id, help_command=commands.DefaultHelpCommand(), description=None, **options):
+    def __init__(self, command_prefix, log_channel_id=None, help_command=commands.DefaultHelpCommand(), description=None, **options):
         super().__init__(command_prefix=command_prefix, help_command=help_command, description=description, **options)
         self.log_channel_id = log_channel_id
 
@@ -109,23 +108,65 @@ class BotPlus(commands.Bot):
         channel = self.get_channel(self.log_channel_id)
         await self.try_send(channel, content, tts=tts, embed=embed, file=file, files=files, delete_after=delete_after, nonce=nonce, allowed_mentions=allowed_mentions)
 
+    def load_extensions_from_folder(self, folder: str):
+        within_files = [f'{folder}/{within_file}' for within_file in os.listdir(folder)]
+        self.load_extensions(*within_files)
+
     def load_extensions(self, *files: str):
         for file in files:
             if os.path.isdir(file):
-                within_files = [f'{file}/{within_file}' for within_file in os.listdir(file) if os.path.isfile(within_file)]
-                self.load_extensions(*within_files)
+                self.load_extensions_from_folder(file)
             else:
                 importlib.import_module(file.replace('/', '.').replace('\\', '.'))
 
+    @property
+    def cogs_status(self):
+        cogs = [(name, CogPlus.Status.BetaEnabled if hasattr(cog, '__beta__') and cog.__beta__ else CogPlus.Status.Enabled)
+                for name, cog in self.cogs.items()]
+        cogs.extend([(cog.qualified_name, CogPlus.Status.BetaDisabled if hasattr(cog, '__beta__') and cog.__beta__ else CogPlus.Status.Disabled)
+                     for cog in self.__disabled_cogs])
+        return dict(cogs)
+
     # Decorators
-    def cog(self, cls):
+    __disabled_cogs = []
+
+    def load_cog(self, cls):
         if issubclass(cls, CogPlus):
-            self.cogs[cls.qualified_name] = cls(self)
-            self.add_cog(self.cogs[cls.qualified_name])
+            cog = cls(self)
+            if cog.__disabled__:
+                self.__disabled_cogs.append(cog)
+            else:
+                self.add_cog(cog)
         else:
             raise TypeError(f'BotPlus.cog only accept a sub-class of "CogPlus" not a "{type(cls)}"')
 
 
 class CogPlus(commands.Cog):
+    __disabled__ = False
+    __beta__ = False
+
     def __init__(self, bot: BotPlus):
         self.bot = bot
+
+    class Status:
+        BetaDisabled = 'BetaDisabled'
+        BetaEnabled = 'BetaEnabled'
+        Disabled = 'Disabled'
+        Enabled = 'Enabled'
+
+    # Decorators
+    @staticmethod
+    def disabled(cls):
+        if issubclass(cls, CogPlus):
+            cls.__disabled__ = True
+        else:
+            raise TypeError(f'CogPlus.disabled only accept a sub-class of "CogPlus" not a "{type(cls)}"')
+        return cls
+
+    @staticmethod
+    def beta(cls):
+        if issubclass(cls, CogPlus):
+            cls.__beta__ = True
+        else:
+            raise TypeError(f'CogPlus.disabled only accept a sub-class of "CogPlus" not a "{type(cls)}"')
+        return cls
