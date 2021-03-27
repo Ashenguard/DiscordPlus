@@ -1,5 +1,4 @@
 import asyncio
-import importlib
 import json
 import os
 from threading import Thread
@@ -8,7 +7,7 @@ from typing import Optional, Union, Iterable, Callable
 import discord
 from discord import Member, Embed, Message, Reaction, Color
 from discord.abc import Messageable, User
-from discord.ext.commands import Bot, DefaultHelpCommand, Cog
+from discord.ext.commands import Bot, DefaultHelpCommand, Cog, ExtensionAlreadyLoaded
 from flask import Flask, jsonify, request, Response
 from requests import post
 
@@ -44,6 +43,7 @@ class BotPlus(Bot):
         self.library = CogLib(self)
 
         self.api = None
+        self.__disabled_cogs__ = []
 
     async def log(self, premessage: PreMessage):
         channel = self.get_channel(self.log_channel_id)
@@ -120,55 +120,35 @@ class BotPlus(Bot):
                 within_files = [f'{file}/{within_file}' for within_file in os.listdir(file)]
                 self.load_extensions(*within_files)
             else:
-                importlib.import_module(file.replace('/', '.').replace('\\', '.'))
+                path = file.replace('/', '.').replace('\\', '.')
+                try:
+                    self.load_extension(path)
+                except ExtensionAlreadyLoaded:
+                    self.reload_extension(path)
 
     @property
     def cogs_status(self):
         cogs = [(name, CogPlus.Status.BetaEnabled if hasattr(cog, '__beta__') and cog.__beta__ else CogPlus.Status.Enabled)
                 for name, cog in self.cogs.items()]
         cogs.extend([(cog.qualified_name, CogPlus.Status.BetaDisabled if hasattr(cog, '__beta__') and cog.__beta__ else CogPlus.Status.Disabled)
-                     for cog in self.__disabled_cogs])
+                     for cog in self.__disabled_cogs__])
         return dict(cogs)
 
     def add_cog(self, cog):
+        if hasattr(cog, '__disabled__') and cog.__disabled__:
+            if cog not in self.__disabled_cogs__:
+                self.__disabled_cogs__.append(cog)
+                print(f'"{cog.qualified_name}" is tagged disabled.')
+            return
+
         super(BotPlus, self).add_cog(cog)
         if hasattr(cog, '__beta__') and cog.__beta__:
-            print(f'"{cog.qualified_name}" is in beta status but it has been activated')
-
-    # Decorators
-    __disabled_cogs = []
-
-    def load_cog(self, cls):
-        if issubclass(cls, CogPlus):
-            cog = cls(self)
-            if cog.__disabled__:
-                self.__disabled_cogs.append(cog)
-            else:
-                self.add_cog(cog)
-        else:
-            raise TypeError(f'BotPlus.cog only accept a sub-class of "CogPlus" not a "{type(cls)}"')
-
-    def load_cog_with_args(self, *args, **kwargs):
-        # noinspection PyArgumentList
-        def load_cog(cls):
-            if issubclass(cls, CogPlus):
-                cog = cls(self, *args, **kwargs)
-                if cog.__disabled__:
-                    self.__disabled_cogs.append(cog)
-                else:
-                    self.add_cog(cog)
-            else:
-                raise TypeError(f'BotPlus.cog only accept a sub-class of "CogPlus" not a "{type(cls)}"')
-
-        return load_cog
+            print(f'"{cog.qualified_name}" is tagged beta but it has been activated')
 
 
 class CogPlus(Cog):
     __disabled__ = False
     __beta__ = False
-
-    def __init__(self, bot: BotPlus):
-        self.bot = bot
 
     class Status:
         BetaDisabled = 'BetaDisabled'
@@ -196,7 +176,7 @@ class CogPlus(Cog):
 
 class API(CogPlus):
     def __init__(self, bot: BotPlus, import_name, **kwargs):
-        super().__init__(bot)
+        self.bot = bot
         self.app = Flask(import_name, **kwargs)
         self._auth = None
         self._thread = None

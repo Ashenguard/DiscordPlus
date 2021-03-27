@@ -89,3 +89,5 @@ class Emotes:
     arrow_backward = Symbols.get('arrow_backward')
     arrow_up_small = Symbols.get('arrow_up_small')
     arrow_down_small = Symbols.get('arrow_down_small')
+    numbers = (Symbols.get('zero'), Symbols.get('one'), Symbols.get('two'), Symbols.get('three'), Symbols.get('four'), Symbols.get('five'), Symbols.get('six'), Symbols.get('seven'), Symbols.get('eight'), Symbols.get('nine'))
+    letters = {c: Symbols.get(f'regional_indicator_{c}') for c in 'abcdefghijklmnopqrstuvwxyz'}
