@@ -2,7 +2,20 @@ from datetime import timedelta, datetime
 
 from discord.ext import tasks
 
-from discordplus import lib
+from .lib import ExceptionFormat, async_wrapper
+
+
+def _reformat_time(s, m, h):
+    m += (h - int(h)) * 60
+    h = int(h)
+    s += (m - int(m)) * 60
+    m = int(m)
+    s = int(s)
+
+    new_s = s % 60
+    new_m = (m + s // 60) % 60
+    h += (m + s // 60) // 60
+    return new_s, new_m, h
 
 
 class TaskPlusStatus:
@@ -42,12 +55,12 @@ class TaskPlus:
         except AttributeError:
             checks = []
 
-        return TaskPlus.__Runner(lib.async_wrapper(func), checks)
+        return TaskPlus.__Runner(async_wrapper(func), checks)
 
     @staticmethod
     def check(*conditions):
         def decorator(func):
-            wrapped_conditions = [lib.async_wrapper(condition) for condition in conditions]
+            wrapped_conditions = [async_wrapper(condition) for condition in conditions]
 
             if isinstance(func, TaskPlus.__Runner):
                 func.conditions.extend(wrapped_conditions)
@@ -59,6 +72,8 @@ class TaskPlus:
         return decorator
 
     def __init__(self, bot, *, seconds=0, minutes=1, hours=0):
+        seconds, minutes, hours = _reformat_time(seconds, minutes, hours)
+
         self.goal = timedelta(seconds=seconds, minutes=minutes, hours=hours)
         self.average_duration = timedelta()
         self.last_run = datetime.now() - self.goal
@@ -97,7 +112,7 @@ class TaskPlus:
             try:
                 await runner.run()
             except Exception as error:
-                lib.print_traceback(error, message=f'Unable to run "{runner}"')
+                ExceptionFormat(error).print(message=f'Unable to run "{runner}"')
 
         self.calculate_duration()
 
