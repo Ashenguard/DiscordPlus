@@ -1,3 +1,7 @@
 /.idea
 /install.bat
 /docs
+/dist
+/build
+/publish.py
+/test.py

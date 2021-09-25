@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import os
 from threading import Thread
@@ -17,20 +18,34 @@ from .task import TaskPlus
 
 
 class PreMessage:
-    def __init__(self, content=None, *, tts=False, embed=None, file=None, files=None, delete_after=None, nonce=None, allowed_mentions=None, reference=None, mention_author=None):
-        self.content = content
-        self.tts = tts
-        self.embed = embed
-        self.file = file
-        self.files = files
-        self.delete_after = delete_after
-        self.nonce = nonce
-        self.allowed_mentions = allowed_mentions
-        self.reference = reference
-        self.mention_author = mention_author
+    __args: list = None
+
+    @staticmethod
+    def init_args():
+        if PreMessage.__args is not None:
+            return
+
+        PreMessage.__args = []
+        args = inspect.getfullargspec(Messageable.send)
+        for arg in args.args + args.kwonlyargs:
+            if arg != 'self':
+                PreMessage.__args.append(arg)
+
+    def __init__(self, **kwargs):
+        PreMessage.init_args()
+        self.args = {k: v for k, v in kwargs.items() if k in PreMessage.__args}
+        self._message = None
+
+    @property
+    def message(self) -> discord.Message:
+        return self._message
+
+    def clone(self) -> 'PreMessage':
+        return PreMessage(**self.args)
 
     async def send(self, ctx: Messageable):
-        return await ctx.send(content=self.content, tts=self.tts, embed=self.embed, file=self.file, files=self.files, delete_after=self.delete_after, nonce=self.nonce, allowed_mentions=self.allowed_mentions, reference=self.reference, mention_author=self.mention_author)
+        self._message = await ctx.send(**self.args)
+        return self._message
 
     async def try_send(self, ctx: Messageable):
         return await try_send(ctx, premessage=self)
@@ -40,10 +55,15 @@ class BotPlus(Bot):
     def __init__(self, command_prefix, log_channel_id=None, help_command=DefaultHelpCommand(), description=None, **options):
         super().__init__(command_prefix=command_prefix, help_command=help_command, description=description, **options)
         self.log_channel_id = log_channel_id
-        self.library = CogLib(self)
+        self._library = CogLib(self)
 
         self.api = None
         self.__disabled_cogs__ = []
+        self.__beta_cogs__ = []
+
+    @property
+    def library(self) -> 'CogLib':
+        return self._library
 
     async def log(self, premessage: PreMessage):
         channel = self.get_channel(self.log_channel_id)
@@ -121,6 +141,9 @@ class BotPlus(Bot):
                 self.load_extensions(*within_files)
             else:
                 path = file.replace('/', '.').replace('\\', '.')
+                if path.endswith('.py'):
+                    path = path[:-3]
+
                 try:
                     self.load_extension(path)
                 except ExtensionAlreadyLoaded:
@@ -134,15 +157,16 @@ class BotPlus(Bot):
                      for cog in self.__disabled_cogs__])
         return dict(cogs)
 
-    def add_cog(self, cog):
+    def add_cog(self, cog,  *, override: bool = False):
         if hasattr(cog, '__disabled__') and cog.__disabled__:
             if cog not in self.__disabled_cogs__:
                 self.__disabled_cogs__.append(cog)
                 print(f'"{cog.qualified_name}" is tagged disabled.')
             return
 
-        super(BotPlus, self).add_cog(cog)
+        super(BotPlus, self).add_cog(cog, override=override)
         if hasattr(cog, '__beta__') and cog.__beta__:
+            self.__beta_cogs__.append(cog)
             print(f'"{cog.qualified_name}" is tagged beta but it has been activated')
 
 
@@ -247,7 +271,7 @@ class CogLib:
 
     def activate_api(self, import_name, host=None, port=None, vote_auth=None):
         self.bot.api = API(self.bot, import_name)
-        self.bot.add_cog(self.bot.api)
+        self.bot.add_cog(self.bot.api, )
         self.bot.api.set_auth(vote_auth)
         self.bot.api.run(host=host, port=port)
         return self.bot.api
@@ -265,7 +289,7 @@ class CogLib:
 
         if premessage is None:
             def _premessage(message: Message):
-                return PreMessage(Embed(title='Prefix', description=f'My prefix is {self.bot.get_prefix(message)}', color=Color.green()))
+                return PreMessage(emded=Embed(title='Prefix', description=f'My prefix is {self.bot.get_prefix(message)}', color=Color.green()))
         elif isinstance(premessage, PreMessage):
             def _premessage(message: Message):
                 return premessage
@@ -274,7 +298,7 @@ class CogLib:
 
         async def custom_event(message: Message):
             content = message.content
-            if re.match(f'\s*<@{id}>\s*', content) and message.author.id != self.bot.user.id:
+            if re.match(f'^\s*<@{id}>\s*$', content) and message.author.id != self.bot.user.id:
                 await _premessage(message).try_send(message.channel)
 
         self._PSOP = custom_event

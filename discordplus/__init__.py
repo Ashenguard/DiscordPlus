@@ -1,25 +1,23 @@
 from .classes import BotPlus, CogPlus, PreMessage
-from .task import TaskPlus, TaskPlusStatus
 from .lib import *
+from .task import TaskPlus, TaskPlusStatus
 
 
 # Doing overrides without affecting the import
 def _overrides():
-    import discord
-    import re
+    from discord.ext.commands import Cog
 
-    send_method = discord.abc.Messageable.send
-    doc = send_method.__doc__.splitlines(False)
-    index = [i for i, item in enumerate(doc) if re.search('\s*?Raises\s*', item)][0]
-    doc.insert(index, 'premessage: Optional[:class:`~discordplus.PreMessage`]\n\tIf set, will send the premessage instead.')
+    # CogPlus update
+    @property
+    def CP_is_beta(self) -> bool:
+        return hasattr(self, '__beta__') and self.__beta__
 
-    async def send(self, content=None, *, tts=False, embed=None, file=None, files=None, delete_after=None, nonce=None, allowed_mentions=None, reference=None, mention_author=None, premessage=None):
-        if premessage is not None:
-            return await premessage.send(self)
-        else:
-            return await send_method(self, content, tts=tts, embed=embed, file=file, files=files, delete_after=delete_after, nonce=nonce, allowed_mentions=allowed_mentions, reference=reference, mention_author=mention_author)
+    @property
+    def CP_is_disabled(self) -> bool:
+        return hasattr(self, '__disabled__') and self.__disabled__
 
-    send.__doc__ = "\n".join(doc)
-    discord.abc.Messageable.send = send
+    Cog.is_beta = CP_is_beta
+    Cog.is_disabled = CP_is_disabled
+
 
 _overrides()

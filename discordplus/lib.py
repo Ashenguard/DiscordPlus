@@ -1,14 +1,14 @@
 import inspect
 import re
+import sys
 import traceback
 from typing import Union, Callable, Any, Iterable
 
-import sys
 from discord import Embed, Color, Message
 from discord.abc import Messageable
 
 __all__ = ['ExceptionValue', 'ExceptionFormat',
-           'extract_number', 'async_wrapper',  'ghost_ping',
+           'extract_number', 'async_wrapper', 'ghost_ping',
            'try_except', 'try_delete', 'try_send', 'try_add_reaction']
 
 from discordplus.extra import Pingable
@@ -108,7 +108,7 @@ async def try_delete(message: Message, delay: int = 0):
     return not isinstance(await try_except(message.delete, delay=delay), ExceptionValue)
 
 
-async def try_send(ctx: Messageable, content=None, *, tts=False, embed=None, file=None, files=None, delete_after=None, nonce=None, allowed_mentions=None, reference=None, mention_author=None, premessage=None):
+async def try_send(ctx: Messageable, content=None, *, tts=None, embed=None, embeds=None, file=None, files=None, stickers=None, delete_after=None, nonce=None, allowed_mentions=None, reference=None, mention_author=None, view=None, premessage=None):
     if premessage is None:
         message = await try_except(ctx.send, content=content, tts=tts, embed=embed, file=file, files=files, delete_after=delete_after, nonce=nonce, allowed_mentions=allowed_mentions, reference=reference, mention_author=mention_author)
     else:
