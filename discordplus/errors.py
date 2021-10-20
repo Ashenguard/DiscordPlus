@@ -1,0 +1,2 @@
+class ExpectedValue(ValueError):
+    pass

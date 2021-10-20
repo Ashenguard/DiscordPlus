@@ -2,7 +2,7 @@ import inspect
 import re
 import sys
 import traceback
-from typing import Union, Callable, Any, Iterable
+from typing import Union, Callable, Any, Iterable, Dict
 
 from discord import Embed, Color, Message
 from discord.abc import Messageable
@@ -11,6 +11,7 @@ __all__ = ['ExceptionValue', 'ExceptionFormat',
            'extract_number', 'async_wrapper', 'ghost_ping',
            'try_except', 'try_delete', 'try_send', 'try_add_reaction']
 
+from discordplus.errors import ExpectedValue
 from discordplus.extra import Pingable
 
 
@@ -72,6 +73,47 @@ class ExceptionFormat:
         exception_list.extend(traceback.format_tb(sys.exc_info()[2]))
         exception_list.extend(traceback.format_exception_only(sys.exc_info()[0], sys.exc_info()[1]))
         return "".join(exception_list)[:-1]
+
+
+class RequiredValue:
+    pass
+
+
+class Config:
+    __options: Dict[str, Any] = {}
+
+    _extra = {}
+
+    def __init__(self, **options):
+        for k, v in self.__options.items():
+            value = options.pop(k, v)
+            if isinstance(value, RequiredValue):
+                raise ExpectedValue(f"A value for '{k}' is required")
+            setattr(self, k, value)
+        self._extra = options.copy()
+
+    def __init_subclass__(cls, **kwargs):
+        if kwargs.get('auto_setup', False) is True:
+            attrs = (attr for attr in dir(cls) if not attr.startswith("_"))
+            options = {}
+            for attr in attrs:
+                if attr in ('options', 'extra_options', 'all'):
+                    continue
+                options[attr] = getattr(cls, attr)
+
+            setattr(cls, f'_{cls.__name__}__options', options)
+
+    @property
+    def options(self):
+        return {k: getattr(self, k, v) for k, v in self.__options.items()}
+
+    @property
+    def extra_options(self):
+        return self._extra
+
+    @property
+    def all(self):
+        return {**self.options, **self._extra}
 
 
 def extract_number(text, required_pattern='\d+', cast_float: bool = False) -> Union[int, float]:

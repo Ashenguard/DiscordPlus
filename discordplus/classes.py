@@ -1,20 +1,17 @@
 import asyncio
 import inspect
-import json
 import os
-from threading import Thread
-from typing import Optional, Union, Iterable, Callable
+from typing import Optional, Union, Iterable, Callable, List
 
 import discord
 from discord import Member, Embed, Message, Reaction, Color
 from discord.abc import Messageable, User
-from discord.ext.commands import Bot, DefaultHelpCommand, Cog, ExtensionAlreadyLoaded
-from flask import Flask, jsonify, request, Response
-from requests import post
+from discord.ext.commands import Bot, DefaultHelpCommand, Cog, ExtensionAlreadyLoaded, command, Context
+from discord_slash import SlashCommand, SlashContext
+from discord_slash.cog_ext import cog_slash
 
-from .extra import MessageChannel, __agent__
-from .lib import try_except, ExceptionFormat, try_add_reaction, try_delete, try_send
-from .task import TaskPlus
+from .extra import MessageChannel
+from .lib import try_except, ExceptionFormat, try_add_reaction, try_delete, try_send, Config, RequiredValue
 
 
 class PreMessage:
@@ -51,10 +48,44 @@ class PreMessage:
         return await try_send(ctx, premessage=self)
 
 
+class SlashConfig(Config, auto_setup=True):
+    sync_commands: bool = False
+    debug_guild: Optional[int] = None
+    delete_from_unused_guilds: bool = False
+    sync_on_cog_reload: bool = False
+    override_type: bool = False
+    application_id: Optional[int] = None
+
+
+class BotPlusConfig(Config, auto_setup=True):
+    token: str = RequiredValue()
+    command_prefix: Union[str, Callable[[Bot, Message], str]] = None
+    log_channel_id: int = None
+    help_command = DefaultHelpCommand()
+    description = None
+    color = Color.default()
+
+    slash_config: Optional[SlashConfig] = None
+
+
 class BotPlus(Bot):
-    def __init__(self, command_prefix, log_channel_id=None, help_command=DefaultHelpCommand(), description=None, **options):
-        super().__init__(command_prefix=command_prefix, help_command=help_command, description=description, **options)
-        self.log_channel_id = log_channel_id
+    def __init__(self, config: BotPlusConfig):
+        super().__init__(
+            command_prefix=config.command_prefix,
+            help_command=config.help_command,
+            description=config.description,
+            **config.extra_options
+        )
+        self._token = config.token
+        self.log_channel_id = config.log_channel_id
+        self._color = config.color
+
+        slash_config = config.slash_config
+        self._slash = None
+        if slash_config is not None:
+            self._slash = SlashCommand(self, **slash_config.options)
+
+        from .coglib import CogLib
         self._library = CogLib(self)
 
         self.api = None
@@ -62,8 +93,11 @@ class BotPlus(Bot):
         self.__beta_cogs__ = []
 
     @property
-    def library(self) -> 'CogLib':
+    def library(self):
         return self._library
+
+    def slash_command(self, *, name: str = None, description: str = None, guild_ids: List[int] = None, options: List[dict] = None, default_permission: bool = True, permissions: dict = None, connector: dict = None):
+        return self._slash.slash(name=name, description=description, guild_ids=guild_ids, options=options, default_permission=default_permission, permissions=permissions, connector=connector)
 
     async def log(self, premessage: PreMessage):
         channel = self.get_channel(self.log_channel_id)
@@ -136,6 +170,10 @@ class BotPlus(Bot):
 
     def load_extensions(self, *files: str):
         for file in files:
+            if not os.path.exists(file):
+                continue
+            if any(part.startswith('_') for part in file.replace('\\', '/').split('/')):
+                continue
             if os.path.isdir(file):
                 within_files = [f'{file}/{within_file}' for within_file in os.listdir(file)]
                 self.load_extensions(*within_files)
@@ -157,17 +195,21 @@ class BotPlus(Bot):
                      for cog in self.__disabled_cogs__])
         return dict(cogs)
 
-    def add_cog(self, cog,  *, override: bool = False):
+    def add_cog(self, cog, *, override: bool = False):
         if hasattr(cog, '__disabled__') and cog.__disabled__:
             if cog not in self.__disabled_cogs__:
                 self.__disabled_cogs__.append(cog)
                 print(f'"{cog.qualified_name}" is tagged disabled.')
             return
 
-        super(BotPlus, self).add_cog(cog, override=override)
+        # 2.0 - Add override to add_cog
+        super(BotPlus, self).add_cog(cog)
         if hasattr(cog, '__beta__') and cog.__beta__:
             self.__beta_cogs__.append(cog)
             print(f'"{cog.qualified_name}" is tagged beta but it has been activated')
+
+    def run(self):
+        return super(BotPlus, self).run(self._token)
 
 
 class CogPlus(Cog):
@@ -179,6 +221,13 @@ class CogPlus(Cog):
         BetaEnabled = 'BetaEnabled'
         Disabled = 'Disabled'
         Enabled = 'Enabled'
+
+    def __init__(self, bot: BotPlus):
+        self.bot = bot
+
+    @staticmethod
+    def slash_command(*, name: str = None, description: str = None, guild_ids: List[int] = None, options: List[dict] = None, default_permission: bool = True, permissions: dict = None, connector: dict = None):
+        return cog_slash(name=name, description=description, guild_ids=guild_ids, options=options, default_permission=default_permission, permissions=permissions, connector=connector)
 
     # Decorators
     @staticmethod
@@ -198,111 +247,40 @@ class CogPlus(Cog):
         return cls
 
 
-class API(CogPlus):
-    def __init__(self, bot: BotPlus, import_name, **kwargs):
-        self.bot = bot
-        self.app = Flask(import_name, **kwargs)
-        self._auth = None
-        self._thread = None
+class CommandPlus:
+    name: str = None
+    description: str = None
+    guild_ids: List[int] = None
+    options: List[dict] = None
+    default_permission: bool = True
+    permissions: dict = None
+    connector: dict = None
 
-        self.app.add_url_rule('/', None, self.ping)
-        self.app.add_url_rule('/ping', None, self.ping)
-        self.app.add_url_rule('/vote', None, self.vote, methods=['POST'])
+    def __init__(self, cog: CogPlus):
+        self.cog = cog
 
-    def set_auth(self, auth):
-        self._auth = auth
+    def init_slash_command(self):
+        cmd = getattr(self, 'slash_command', None)
+        if cmd is None:
+            raise NotImplementedError
 
-    def main(self):
-        return jsonify(Name=self.bot.user.name, Status='Online' if self.bot.is_ready() else 'Offline', Ping=self.bot.latency * 1000 if self.bot.is_ready() else 0)
+        wrapper = self.cog.bot.slash_command(
+            name=self.name,
+            description=self.description,
+            guild_ids=self.guild_ids,
+            options=self.options,
+            default_permission=self.default_permission,
+            permissions=self.permissions,
+            connector=self.connector
+        )
 
-    def ping(self):
-        return jsonify(Status='Online' if self.bot.is_ready() else 'Offline', Ping=self.bot.latency * 1000 if self.bot.is_ready() else 0)
+        return wrapper(cmd)
 
-    def vote(self):
-        req_auth = request.headers.get('Authorization')
-        if self._auth == req_auth and self._auth is not None:
-            data = request.json or request.form or request.args or {}
-            if data.get('type', None) == 'upvote':
-                event_name = 'vote'
-            elif data.get('type', None) == 'test':
-                event_name = 'test_vote'
-            else:
-                return Response(status=401)
-            self.bot.dispatch(event_name, data)
-            return Response(status=200)
-        else:
-            return Response(status=401)
+    def init_command(self, **attr):
+        cmd = getattr(self, 'command', None)
+        if cmd is None:
+            raise NotImplementedError
 
-    def run(self, host=None, port=None, debug=None, load_dotenv=True, **options):
-        self._thread = Thread(target=lambda: self.app.run(host, port, debug, load_dotenv=load_dotenv, **options))
-        self._thread.setDaemon(True)
-        self._thread.start()
+        wrapper = command(name=self.name, description=self.description, **attr)
 
-
-class TopGGPoster(TaskPlus):
-    def __init__(self, bot: BotPlus, token: str, timer: float = 1800):
-        super().__init__(bot, seconds=timer)
-        self.token = token
-        self.shard_count: Optional[int] = None
-        self.shard_id: Optional[int] = None
-
-        self.headers = {
-            'User-Agent': __agent__,
-            'Content-Type': 'application/json',
-            'Authorization': self.token
-        }
-
-    @TaskPlus.execute
-    def post(self):
-        payload = {'server_count': len(self.bot.guilds)}
-        if self.shard_count is not None:
-            payload["shard_count"] = self.shard_count
-        if self.shard_id is not None:
-            payload["shard_id"] = self.shard_id
-        return post('https://top.gg/api/bots/stats', data=json.dumps(payload), headers=self.headers)
-
-
-class CogLib:
-    def __init__(self, bot: BotPlus):
-        self.bot = bot
-
-        self._TopGGTask = None
-        self._PSOP = None
-
-    def activate_api(self, import_name, host=None, port=None, vote_auth=None):
-        self.bot.api = API(self.bot, import_name)
-        self.bot.add_cog(self.bot.api, )
-        self.bot.api.set_auth(vote_auth)
-        self.bot.api.run(host=host, port=port)
-        return self.bot.api
-
-    def activate_topgg_poster(self, token: str, timer: float = 1800):
-        self._TopGGTask = TopGGPoster(self.bot, token, timer)
-        self._TopGGTask.start()
-        return self._TopGGTask
-
-    def disable_topgg_poster(self):
-        self._TopGGTask.stop()
-
-    def activate_prefix_send_on_ping(self, premessage: Union[PreMessage, Callable[[Message], PreMessage]] = None):
-        import re
-
-        if premessage is None:
-            def _premessage(message: Message):
-                return PreMessage(emded=Embed(title='Prefix', description=f'My prefix is {self.bot.get_prefix(message)}', color=Color.green()))
-        elif isinstance(premessage, PreMessage):
-            def _premessage(message: Message):
-                return premessage
-        else:
-            _premessage = premessage
-
-        async def custom_event(message: Message):
-            content = message.content
-            if re.match(f'^\s*<@{id}>\s*$', content) and message.author.id != self.bot.user.id:
-                await _premessage(message).try_send(message.channel)
-
-        self._PSOP = custom_event
-        self.bot.add_listener(self._PSOP, 'on_message')
-
-    def disable_prefix_send_on_ping(self):
-        self.bot.remove_listener(self._PSOP, 'on_message')
+        return wrapper(cmd)
