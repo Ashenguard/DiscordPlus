@@ -1,36 +1,32 @@
 import asyncio
 import inspect
 import os
-from typing import Optional, Union, Iterable, Callable, List
+from typing import Optional, Union, Iterable, Callable, List, Dict
 
 import discord
 from discord import Member, Embed, Message, Reaction, Color
 from discord.abc import Messageable, User
-from discord.ext.commands import Bot, DefaultHelpCommand, Cog, ExtensionAlreadyLoaded, command, Context
-from discord_slash import SlashCommand, SlashContext
+from discord.ext.commands import Bot, DefaultHelpCommand, Cog, ExtensionAlreadyLoaded
+from discord_slash import SlashCommand
 from discord_slash.cog_ext import cog_slash
+from discord_slash.context import InteractionContext
 
 from .extra import MessageChannel
 from .lib import try_except, ExceptionFormat, try_add_reaction, try_delete, try_send, Config, RequiredValue
+from .utils import message_args, interaction_args
 
 
 class PreMessage:
-    __args: list = None
-
-    @staticmethod
-    def init_args():
-        if PreMessage.__args is not None:
-            return
-
-        PreMessage.__args = []
-        args = inspect.getfullargspec(Messageable.send)
-        for arg in args.args + args.kwonlyargs:
-            if arg != 'self':
-                PreMessage.__args.append(arg)
-
     def __init__(self, **kwargs):
-        PreMessage.init_args()
-        self.args = {k: v for k, v in kwargs.items() if k in PreMessage.__args}
+        self.interaction_args = {}
+        self.message_args = {}
+
+        for k in message_args:
+            self.message_args[k] = kwargs.get(k, None)
+
+        for k in interaction_args:
+            self.interaction_args[k] = kwargs.get(k, None)
+
         self._message = None
 
     @property
@@ -38,11 +34,14 @@ class PreMessage:
         return self._message
 
     def clone(self) -> 'PreMessage':
-        return PreMessage(**self.args)
+        return PreMessage(**{**self.message_args, **self.interaction_args})
 
-    async def send(self, ctx: Messageable):
-        self._message = await ctx.send(**self.args)
-        return self._message
+    async def send(self, ctx: Union[Messageable, InteractionContext]):
+        if isinstance(ctx, InteractionContext):
+            args = self.interaction_args
+        else:
+            args = self.message_args
+        return await ctx.send(**args)
 
     async def try_send(self, ctx: Messageable):
         return await try_send(ctx, premessage=self)
@@ -78,7 +77,7 @@ class BotPlus(Bot):
         )
         self._token = config.token
         self.log_channel_id = config.log_channel_id
-        self._color = config.color
+        self.color = config.color
 
         slash_config = config.slash_config
         self._slash = None
@@ -95,6 +94,9 @@ class BotPlus(Bot):
     @property
     def library(self):
         return self._library
+
+    def get_slash(self):
+        return self._slash
 
     def slash_command(self, *, name: str = None, description: str = None, guild_ids: List[int] = None, options: List[dict] = None, default_permission: bool = True, permissions: dict = None, connector: dict = None):
         return self._slash.slash(name=name, description=description, guild_ids=guild_ids, options=options, default_permission=default_permission, permissions=permissions, connector=connector)
@@ -117,7 +119,7 @@ class BotPlus(Bot):
         emoji = None
         try:
             event = await self.wait_for('reaction_add', check=self.check_reaction(message, target, emotes), timeout=timeout)
-            emoji = event[0].emoji
+            emoji = event[0]._emoji
         finally:
             if delete_after:
                 await try_delete(message)
@@ -202,7 +204,7 @@ class BotPlus(Bot):
                 print(f'"{cog.qualified_name}" is tagged disabled.')
             return
 
-        # 2.0 - Add override to add_cog
+        # Todo - dpy 2.0 - Add override to add_cog
         super(BotPlus, self).add_cog(cog)
         if hasattr(cog, '__beta__') and cog.__beta__:
             self.__beta_cogs__.append(cog)
@@ -210,6 +212,9 @@ class BotPlus(Bot):
 
     def run(self):
         return super(BotPlus, self).run(self._token)
+
+    def get_translation_dict(self) -> Dict[str, str]:
+        return {'Bot': self.user.mention, 'BotID': self.user.id, 'Prefix': self.command_prefix, 'Guilds': len(self.guilds), 'Users': len(self.users)}
 
 
 class CogPlus(Cog):
@@ -247,6 +252,24 @@ class CogPlus(Cog):
         return cls
 
 
+class BaseCommandPlus:
+    name: str = None
+    description: str = None
+    default_permission: bool = True
+    permissions: dict = None
+
+
+class CommandGroupPlus:
+    name: str = None
+    description: str = None
+
+    def __init__(self, base: BaseCommandPlus):
+        if not isinstance(base, BaseCommandPlus):
+            raise TypeError(f'`CommandGroupPlus` requires a `BaseCommandPlus` not a "{type(base)}"')
+
+        self.base = base
+
+
 class CommandPlus:
     name: str = None
     description: str = None
@@ -256,31 +279,50 @@ class CommandPlus:
     permissions: dict = None
     connector: dict = None
 
-    def __init__(self, cog: CogPlus):
+    def __init__(self, cog: CogPlus, base: Union[CommandGroupPlus, BaseCommandPlus] = None):
         self.cog = cog
+        self.base = base
 
-    def init_slash_command(self):
+    def register(self):
         cmd = getattr(self, 'slash_command', None)
         if cmd is None:
             raise NotImplementedError
 
-        wrapper = self.cog.bot.slash_command(
-            name=self.name,
-            description=self.description,
-            guild_ids=self.guild_ids,
-            options=self.options,
-            default_permission=self.default_permission,
-            permissions=self.permissions,
-            connector=self.connector
-        )
-
-        return wrapper(cmd)
-
-    def init_command(self, **attr):
-        cmd = getattr(self, 'command', None)
-        if cmd is None:
-            raise NotImplementedError
-
-        wrapper = command(name=self.name, description=self.description, **attr)
+        if isinstance(self.base, CommandGroupPlus):
+            wrapper = self.cog.bot.get_slash().subcommand(
+                base=self.base.base.name,
+                subcommand_group=self.base.name,
+                name=self.name,
+                description=self.description,
+                base_description=self.base.base.description,
+                base_default_permission=self.base.base.default_permission,
+                base_permissions=self.base.base.permissions,
+                subcommand_group_description=self.base.description,
+                guild_ids=self.guild_ids,
+                options=self.options,
+                connector=self.connector,
+            )
+        elif isinstance(self.base, BaseCommandPlus):
+            wrapper = self.cog.bot.get_slash().subcommand(
+                base=self.base.name,
+                name=self.name,
+                description=self.description,
+                base_description=self.base.description,
+                base_default_permission=self.base.default_permission,
+                base_permissions=self.base.permissions,
+                guild_ids=self.guild_ids,
+                options=self.options,
+                connector=self.connector,
+            )
+        else:
+            wrapper = self.cog.bot.get_slash().slash(
+                name=self.name,
+                description=self.description,
+                guild_ids=self.guild_ids,
+                options=self.options,
+                default_permission=self.default_permission,
+                permissions=self.permissions,
+                connector=self.connector
+            )
 
         return wrapper(cmd)
