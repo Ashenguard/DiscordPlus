@@ -3,18 +3,18 @@ import os
 import yaml
 
 
-class DatabaseLanguage:
+class DatabaseEncoder:
     def encode(self, data: dict) -> str:
         raise NotImplementedError()
 
     def decode(self, data: str) -> dict:
         raise NotImplementedError()
 
-    JSON = None
-    YAML = None
+    JSON: 'DatabaseEncoder' = None
+    YAML: 'DatabaseEncoder' = None
 
 
-class __JSONLanguage(DatabaseLanguage):
+class __JSONEncoder(DatabaseEncoder):
     def encode(self, data: dict) -> str:
         return json.dumps(data, indent=2)
 
@@ -22,7 +22,7 @@ class __JSONLanguage(DatabaseLanguage):
         return json.loads(data)
 
 
-class __YAMLLanguage(DatabaseLanguage):
+class __YAMLEncoder(DatabaseEncoder):
     def encode(self, data: dict) -> str:
         return yaml.safe_dump(data)
 
@@ -30,30 +30,30 @@ class __YAMLLanguage(DatabaseLanguage):
         return yaml.safe_load(data)
 
 
-DatabaseLanguage.JSON = __JSONLanguage()
-DatabaseLanguage.YAML = __YAMLLanguage()
+DatabaseEncoder.JSON = __JSONEncoder()
+DatabaseEncoder.YAML = __YAMLEncoder()
 
 
 class Database:
-    def __init__(self, file_path: str, language: DatabaseLanguage, create_if_missing: bool = True, default_data=None, encoding='utf8'):
-        self.file_path = file_path
-        self.encoding = encoding
-        self.language = language
+    def __init__(self, file_path: str, encoder: DatabaseEncoder, create_if_missing: bool = True, default_data=None, encoding='utf8'):
+        self._file_path = file_path
+        self._encoding = encoding
+        self._encoder = encoder
 
-        if not os.path.exists(self.file_path):
+        if not os.path.exists(self._file_path):
             if create_if_missing:
-                os.makedirs(self.file_path[:self.file_path.rfind('/')], exist_ok=True)
+                os.makedirs(self._file_path[:self._file_path.rfind('/')], exist_ok=True)
                 self.save_data(default_data or {})
             else:
-                raise FileNotFoundError(f'"{self.file_path}" does not exists')
+                raise FileNotFoundError(f'"{self._file_path}" does not exists')
 
     def save_data(self, data: dict):
-        with open(file=self.file_path, mode='w', encoding=self.encoding) as file:
-            file.write(self.language.encode(data))
+        with open(file=self._file_path, mode='w', encoding=self._encoding) as file:
+            file.write(self._encoder.encode(data))
 
     def load_data(self) -> dict:
-        with open(file=self.file_path, mode='r', encoding=self.encoding) as file:
-            return self.language.decode(file.read())
+        with open(file=self._file_path, mode='r', encoding=self._encoding) as file:
+            return self._encoder.decode(file.read())
 
     def get_data(self, path: str = None, cast: type = None):
         data = self.load_data().copy()
@@ -117,14 +117,14 @@ class Database:
 
     def delete(self, *, confirm: bool):
         if confirm:
-            os.remove(self.file_path)
+            os.remove(self._file_path)
 
 
 class JSONDatabase(Database):
     def __init__(self, file_path: str, create_if_missing: bool = True, default_data=None, encoding='utf8'):
-        super().__init__(file_path, DatabaseLanguage.JSON, create_if_missing, default_data, encoding)
+        super().__init__(file_path, DatabaseEncoder.JSON, create_if_missing, default_data, encoding)
 
 
 class YAMLDatabase(Database):
     def __init__(self, file_path: str, create_if_missing: bool = True, default_data=None, encoding='utf8'):
-        super().__init__(file_path, DatabaseLanguage.YAML, create_if_missing, default_data, encoding)
+        super().__init__(file_path, DatabaseEncoder.YAML, create_if_missing, default_data, encoding)
