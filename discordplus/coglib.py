@@ -1,18 +1,22 @@
 import json
 from threading import Thread
-from typing import Optional
+from typing import Optional, Callable, Union
 
+from discord.ext.commands import Context
+from discord_slash import SlashContext
 from flask import Flask, jsonify, request, Response
 from requests import post
 
 from .classes import CogPlus, BotPlus
+from .database.translation import Translation
+from .errors import InteractionError, UnexpectedError
 from .extra import __agent__
 from .task import TaskPlus
 
 
 class API(CogPlus):
     def __init__(self, bot: BotPlus, import_name, **kwargs):
-        self.bot = bot
+        super().__init__(bot)
         self.app = Flask(import_name, **kwargs)
         self._auth = None
         self._thread = None
@@ -74,12 +78,33 @@ class TopGGPoster(TaskPlus):
         return post('https://top.gg/api/bots/stats', data=json.dumps(payload), headers=self.headers)
 
 
+class CommandErrorHandlerCog(CogPlus):
+    def get_translation(self, ctx) -> Translation:
+        return Translation(self.bot, 'Errors')
+
+    @CogPlus.listener()
+    async def on_slash_command_error(self, ctx: SlashContext, exception: Exception):
+        translation = self.get_translation(ctx)
+        if isinstance(exception, InteractionError):
+            await exception.send(self.bot, ctx, translation)
+        else:
+            await UnexpectedError(exception).send(self.bot, ctx, translation)
+
+    @CogPlus.listener()
+    async def on_command_error(self, ctx: Context, exception: Exception):
+        translation = self.get_translation(ctx)
+        if isinstance(exception, InteractionError):
+            await exception.send(self.bot, ctx, translation)
+        else:
+            await UnexpectedError(exception).send(self.bot, ctx, translation)
+
+
 class CogLib:
     def __init__(self, bot: BotPlus):
         self.bot = bot
 
         self._TopGGTask = None
-        self._PSOP = None
+        self._CEH = None
 
     def activate_api(self, import_name, host=None, port=None, vote_auth=None):
         self.bot.api = API(self.bot, import_name)
@@ -92,6 +117,19 @@ class CogLib:
         self._TopGGTask = TopGGPoster(self.bot, token, timer)
         self._TopGGTask.start()
         return self._TopGGTask
+
+    def activate_command_error_handler(self, get_translation_method: Callable[[Union[Context, SlashContext]], Translation] = None):
+        if self._CEH:
+            self.bot.remove_cog(self._CEH.qualified_name)
+
+        self._CEH = CommandErrorHandlerCog(self.bot)
+        self.bot.add_cog(self._CEH)
+
+    def disable_command_error_handler(self):
+        if self._CEH:
+            self.bot.remove_cog(self._CEH.qualified_name)
+
+        self._CEH = None
 
     def disable_topgg_poster(self):
         self._TopGGTask.stop()
