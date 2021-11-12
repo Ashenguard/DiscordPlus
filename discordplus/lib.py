@@ -11,7 +11,6 @@ __all__ = ['ExceptionValue', 'ExceptionFormat',
            'extract_number', 'async_wrapper', 'ghost_ping',
            'try_except', 'try_delete', 'try_send', 'try_add_reaction']
 
-from discordplus.errors import ExpectedValue
 from discordplus.extra import Pingable
 
 
@@ -88,7 +87,7 @@ class Config:
         for k, v in self.__options.items():
             value = options.pop(k, v)
             if isinstance(value, RequiredValue):
-                raise ExpectedValue(f"A value for '{k}' is required")
+                raise ValueError(f"A value for '{k}' is required")
             setattr(self, k, value)
         self._extra = options.copy()
 

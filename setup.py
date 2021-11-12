@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="discordplus",
-    version="1.2.1",
+    version="1.3.0",
     license='MIT License',
     author="Ashenguard",
     author_email="Ashenguard@agmdev.com",
@@ -22,6 +22,6 @@ setuptools.setup(
     ],
     python_requires='>=3.8',
     include_package_data=True,
-    install_requires=["pyyaml", "flask", "requests", "discord-py-slash-command", "discord.py"],
+    install_requires=["pyyaml", "flask", "requests", "discord-py-interactions", "discord.py"],
     dependency_links=[]
 )
