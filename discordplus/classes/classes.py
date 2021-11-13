@@ -1,70 +1,13 @@
-import asyncio
-import inspect
 import os
-from typing import Optional, Union, Iterable, Callable, List, Dict
+from typing import Union, List, Dict
 
-import discord
-from discord import Member, Embed, Message, Reaction, Color
-from discord.abc import Messageable, User
-from discord.ext.commands import Bot, DefaultHelpCommand, Cog, ExtensionAlreadyLoaded
+from discord.ext.commands import Bot, Cog, ExtensionAlreadyLoaded
 from discord_slash import SlashCommand
 from discord_slash.cog_ext import cog_slash
-from discord_slash.context import InteractionContext
 
-from .extra import MessageChannel
-from .lib import try_except, ExceptionFormat, try_add_reaction, try_delete, try_send, Config, RequiredValue
-from .utils import message_args, interaction_args
-
-
-class PreMessage:
-    def __init__(self, **kwargs):
-        self.interaction_args = {}
-        self.message_args = {}
-
-        for k in message_args:
-            self.message_args[k] = kwargs.get(k, None)
-
-        for k in interaction_args:
-            self.interaction_args[k] = kwargs.get(k, None)
-
-        self._message = None
-
-    @property
-    def message(self) -> discord.Message:
-        return self._message
-
-    def clone(self) -> 'PreMessage':
-        return PreMessage(**{**self.message_args, **self.interaction_args})
-
-    async def send(self, ctx: Union[Messageable, InteractionContext]):
-        if isinstance(ctx, InteractionContext):
-            args = self.interaction_args
-        else:
-            args = self.message_args
-        return await ctx.send(**args)
-
-    async def try_send(self, ctx: Messageable):
-        return await try_send(ctx, premessage=self)
-
-
-class SlashConfig(Config, auto_setup=True):
-    sync_commands: bool = False
-    debug_guild: Optional[int] = None
-    delete_from_unused_guilds: bool = False
-    sync_on_cog_reload: bool = False
-    override_type: bool = False
-    application_id: Optional[int] = None
-
-
-class BotPlusConfig(Config, auto_setup=True):
-    token: str = RequiredValue()
-    command_prefix: Union[str, Callable[[Bot, Message], str]] = None
-    log_channel_id: int = None
-    help_command = DefaultHelpCommand()
-    description = None
-    color = Color.default()
-
-    slash_config: Optional[SlashConfig] = None
+from discordplus import PreMessage
+from discordplus.lib import ExceptionFormat
+from .configs import BotPlusConfig
 
 
 class BotPlus(Bot):
@@ -84,7 +27,7 @@ class BotPlus(Bot):
         if slash_config is not None:
             self._slash = SlashCommand(self, **slash_config.options)
 
-        from .coglib import CogLib
+        from ..coglib import CogLib
         self._library = CogLib(self)
 
         self.api = None
@@ -107,68 +50,6 @@ class BotPlus(Bot):
 
     async def log_exception(self, exception: Exception, *details: str):
         return await self.log(ExceptionFormat(exception, *details).premessage)
-
-    async def confirm(self, channel: MessageChannel, premessage: PreMessage, target: Union[User, Member], timeout: Optional[int] = None, delete_after: bool = False) -> Optional[bool]:
-        emoji = await self.get_reaction(channel, premessage, target, timeout, delete_after, ['✅', '❌'])
-        return None if emoji is None else emoji == '✅'
-
-    async def get_reaction(self, channel: MessageChannel, premessage: PreMessage, target: Union[User, Member], timeout: Optional[int] = None, delete_after: bool = False, emotes: Iterable = None) -> Optional[str]:
-        message: discord.Message = await premessage.send(channel)
-        await try_add_reaction(message, emotes)
-
-        emoji = None
-        try:
-            event = await self.wait_for('reaction_add', check=self.check_reaction(message, target, emotes), timeout=timeout)
-            emoji = event[0]._emoji
-        finally:
-            if delete_after:
-                await try_delete(message)
-            else:
-                await try_except(message.clear_reactions)
-        return emoji
-
-    async def get_answer(self, channel: MessageChannel, premessage: PreMessage, target: Union[User, Member], timeout: Optional[int] = None, delete_after: bool = False, forbid: bool = False, forbid_premessage: PreMessage = None) -> Optional[str]:
-        message: discord.Message = await premessage.send(channel)
-        content = None
-        respond = None
-
-        try:
-            respond = await self.wait_for('message', check=self.check_message(channel, target, forbid, forbid_premessage), timeout=timeout)
-            content = respond.content
-        finally:
-            if delete_after:
-                await try_delete(message)
-                await try_delete(respond)
-
-            return content
-
-    def check_message(self, channel: MessageChannel, target: Union[User, Member], forbid: bool = False, forbid_premessage: PreMessage = None):
-        if forbid:
-            if forbid_premessage is None:
-                forbid_premessage = PreMessage(embed=Embed(title='**ERROR**', description=f'Only {target.mention} can send message here', colour=discord.Colour.red()))
-            forbid_premessage.delete_after = max(forbid_premessage.delete_after, 20)
-
-            def check(message: Message):
-                if message.channel.id == channel.id and message.author.id not in (target.id, self.user.id):
-                    asyncio.ensure_future(try_delete(message))
-                    asyncio.ensure_future(forbid_premessage.send(channel))
-                    return False
-                return message.channel.id == channel.id and message.author.id == target.id
-        else:
-            def check(message: Message):
-                return message.channel.id == channel.id and message.author.id == target.id
-
-        return check
-
-    def check_reaction(self, message: Message, target: Union[User, Member], emotes: list = None):
-        def check(reaction: Reaction, user):
-            if reaction.message.id == message.id and user.id != self.user.id:
-                asyncio.ensure_future(reaction.remove(user))
-            if user != target or reaction.message.id != message.id:
-                return False
-            return emotes is None or len(emotes) == 0 or str(reaction.emoji) in [str(e) for e in emotes]
-
-        return check
 
     def load_extensions(self, *files: str):
         for file in files:
@@ -252,24 +133,6 @@ class CogPlus(Cog):
         return cls
 
 
-class BaseCommandPlus:
-    name: str = None
-    description: str = None
-    default_permission: bool = True
-    permissions: dict = None
-
-
-class CommandGroupPlus:
-    name: str = None
-    description: str = None
-
-    def __init__(self, base: BaseCommandPlus):
-        if not isinstance(base, BaseCommandPlus):
-            raise TypeError(f'`CommandGroupPlus` requires a `BaseCommandPlus` not a "{type(base)}"')
-
-        self.base = base
-
-
 class CommandPlus:
     name: str = None
     description: str = None
@@ -279,7 +142,7 @@ class CommandPlus:
     permissions: dict = None
     connector: dict = None
 
-    def __init__(self, cog: CogPlus, base: Union[CommandGroupPlus, BaseCommandPlus] = None):
+    def __init__(self, cog: CogPlus, base: Union['CommandGroupPlus', 'BaseCommandPlus'] = None):
         self.cog = cog
         self.base = base
 
@@ -326,3 +189,15 @@ class CommandPlus:
             )
 
         return wrapper(cmd)
+
+
+class BaseCommandPlus(CommandPlus):
+    name: str = None
+    description: str = None
+    default_permission: bool = True
+    permissions: dict = None
+
+
+class CommandGroupPlus(CommandPlus):
+    name: str = None
+    description: str = None
