@@ -44,7 +44,7 @@ class PreMessage:
             return PreMessage(content=data, **kwargs)
         elif isinstance(data, dict):
             data = {k.lower(): v for k, v in (*data.items(), *kwargs.items())}
-            embed = Embed.from_dict(data)
+            embed = Embed.from_dict({**data, 'color': bot.color})
             embed_is_empty = True
             for k, v in embed.to_dict().items():
                 if k not in ['color', 'colour', 'type'] and v:
@@ -78,5 +78,3 @@ class PreMessage:
 
     async def try_send(self, ctx: Messageable):
         return await try_except(self.send, ctx)
-
-
