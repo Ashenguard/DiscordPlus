@@ -9,7 +9,6 @@ from discord_slash.error import SlashCommandError
 
 from .classes import BotPlus
 from .database.translation import Translation
-from .utils import message_args
 
 
 class InteractionError(Exception):
@@ -21,13 +20,18 @@ class InteractionError(Exception):
 
     async def send(self, bot: BotPlus, ctx: Union[Context, SlashContext], translation: Translation = None):
         if self._name is None:
-            return
-        kwargs = {arg: getattr(self, arg, '-') for arg in self._args}
+            raise ValueError('The InteractionError `name` can not be null')
+
+        if isinstance(self._args, dict):
+            kwargs = {arg: getattr(self, arg, val) for arg, val in self._args.items()}
+        else:
+            kwargs = {arg: getattr(self, arg, None) for arg in self._args}
 
         if translation is None:
             translation = Translation(bot, "Errors", "EN")
 
-        premessage = translation.get_premessage(self._name, colot=Color.red(), hidden=True, **kwargs)
+        premessage = translation.get_premessage(self._name, color=Color.red(), hidden=True, **kwargs)
+        print(premessage.interaction_args)
         await premessage.send(ctx)
 
 

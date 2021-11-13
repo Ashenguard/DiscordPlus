@@ -19,5 +19,17 @@ def _overrides():
     Cog.is_beta = CP_is_beta
     Cog.is_disabled = CP_is_disabled
 
+    from discord import Colour
+
+    color_old_init = Colour.__init__
+
+    def color_new_init(self, value):
+        if isinstance(value, Colour):
+            color_old_init(self, value.value)
+        else:
+            color_old_init(self, value)
+
+    Colour.__init__ = color_new_init
+
 
 _overrides()

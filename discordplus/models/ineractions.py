@@ -395,13 +395,13 @@ class InteractionRow(Component):
         if len(self.components) == 5:
             raise IncorrectFormatError("`InteractionRow` can only have 5 compenents")
         if not isinstance(component, Component):
-            raise IncorrectTypeError(f"You can only add `Component` to `InteractionRow` not `{type(component)}`")
+            raise IncorrectTypeError(f"You can only add_from_data `Component` to `InteractionRow` not `{type(component)}`")
         if isinstance(component, SelectOption):
-            raise IncorrectFormatError("You can't add `SelectOption` to `InteractionRow`")
+            raise IncorrectFormatError("You can't add_from_data `SelectOption` to `InteractionRow`")
         if isinstance(component, InteractionRow):
-            raise IncorrectFormatError("You can't add another `InteractionRow` to `InteractionRow`")
+            raise IncorrectFormatError("You can't add_from_data another `InteractionRow` to `InteractionRow`")
         if isinstance(component, SelectMenu) and len(self._components) > 1:
-            raise IncorrectFormatError("You can't add `SelectMenu` to this `InteractionRow`")
+            raise IncorrectFormatError("You can't add_from_data `SelectMenu` to this `InteractionRow`")
 
         self._components.append(component)
 
@@ -442,11 +442,11 @@ class InteractionMenu(Component):
         if len(self.components) == 5:
             raise IncorrectFormatError("`InteractionRow` can only have 5 compenents")
         if not isinstance(component, Component):
-            raise IncorrectTypeError("You can only add `Components` to `InteractionMenu`")
+            raise IncorrectTypeError("You can only add_from_data `Components` to `InteractionMenu`")
         if isinstance(component, SelectOption):
-            raise IncorrectFormatError("You can't add `SelectOption` to `InteractionMenu`")
+            raise IncorrectFormatError("You can't add_from_data `SelectOption` to `InteractionMenu`")
         if isinstance(component, InteractionMenu):
-            raise IncorrectFormatError("You can't add another `InteractionMenu` to `InteractionMenu`")
+            raise IncorrectFormatError("You can't add_from_data another `InteractionMenu` to `InteractionMenu`")
         if isinstance(component, InteractionRow):
             self._components.append(component)
         if isinstance(component, SelectMenu):

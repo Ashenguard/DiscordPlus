@@ -1,14 +1,7 @@
 import json
-from typing import Dict, Any, Union
-from warnings import warn
-
-from discord import Embed
-from discord.abc import Messageable
-from discord_slash.context import InteractionContext
 
 from .database import YAMLDatabase
 from ..classes import BotPlus, PreMessage
-from ..utils import message_args
 
 
 class TranslationError(Exception):
@@ -26,21 +19,6 @@ def set_placeholders(bot: BotPlus, string: str, escape=True, case_sensitive=Fals
         string = string.replace('{' + k + '}', v)
 
     return string
-
-
-def data_to_dict(bot, data, **kwargs):
-    color = kwargs.pop('color', bot.color)
-    embed = {'type': 'rich', 'color': color.value}
-    for key, item in data.items():
-        embed[key.lower()] = item
-
-    if 'fields' in embed.keys():
-        fields = embed['fields']
-        for field in fields:
-            if 'inline' not in field.keys():
-                field['inline'] = False
-
-    return Embed.from_dict(embed)
 
 
 class Translation(YAMLDatabase):
@@ -62,28 +40,6 @@ class Translation(YAMLDatabase):
         string = set_placeholders(self.bot, string, **kwargs)
         return json.loads(string, strict=False)
 
-    def get_embed(self, path: str = None, **kwargs) -> Embed:
-        warn('`Translation#get_embed` is deprecated. Please use `Translation#get_premessage`', DeprecationWarning)
-        data: Dict[str, Any] = self.get_json_translated(path, **kwargs)
-        return data_to_dict(self.bot, data, **kwargs)
-
-    def get_premessage(self, ctx: Union[Messageable, InteractionContext], path: str = None, **kwargs) -> PreMessage:
-        send_args = {}
-        for key in message_args:
-            send_args[key] = kwargs.get(key, None)
-
+    def get_premessage(self, path: str = None, **kwargs) -> PreMessage:
         value = self.get_json_translated(path, **kwargs)
-        if isinstance(value, dict):
-            if 'content' in value.keys():
-                for key in message_args:
-                    if key in value.keys():
-                        send_args[key] = kwargs.get(key, None)
-            else:
-                send_args['embed'] = value
-        else:
-            send_args['content'] = str(value)
-
-        if isinstance(send_args['embed'], dict):
-            send_args['embed'] = data_to_dict(self.bot, send_args['embed'], **kwargs)
-
-        return PreMessage(**kwargs)
+        return PreMessage.from_data(self.bot, value, **kwargs)
