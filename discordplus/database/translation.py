@@ -26,14 +26,11 @@ class Translation(YAMLDatabase):
         super().__init__(f'./translations/{language}/{file.lower()}.yml')
         self.bot = bot
 
-    def get(self, path, **kwargs):
-        value = self.get_data(path)
-        if type(value) == str:
-            value = set_placeholders(value, **kwargs)
-        return value
+    def get(self, path):
+        return self.get_data(path)
 
     def __getitem__(self, item):
-        return self.get(item)
+        return self.get_data(item)
 
     def get_json_translated(self, path: str = None, **kwargs):
         string = json.dumps(self.get(path))
