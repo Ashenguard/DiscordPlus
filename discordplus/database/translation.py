@@ -26,8 +26,12 @@ class Translation(YAMLDatabase):
         super().__init__(f'./translations/{language}/{file.lower()}.yml')
         self.bot = bot
 
-    def get(self, path):
-        return self.get_data(path)
+    def get(self, path, **kwargs):
+        value = self.get_data(path)
+        if isinstance(value, str):
+            value = set_placeholders(self.bot, value, **kwargs)
+
+        return value
 
     def __getitem__(self, item):
         return self.get_data(item)
