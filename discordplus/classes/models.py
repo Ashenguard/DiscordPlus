@@ -4,7 +4,7 @@ from discord import Message
 from discord.abc import Messageable
 from discord_slash.context import InteractionContext
 
-from discordplus import try_except
+from ..lib import try_except
 
 messageable_args = {'content': None, 'tts': False, 'embed': None, 'file': None, 'files': None, 'nonce': None, 'delete_after': None, 'allowed_mentions': None, 'reference': None, 'mention_author': None}
 interaction_args = {'content': None, 'tts': False, 'embed': None, 'embeds': None, 'file': None, 'files': None, 'delete_after': None, 'allowed_mentions': None, 'hidden': False, 'components': None}

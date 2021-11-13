@@ -5,9 +5,9 @@ from discord.ext.commands import Bot, Cog, ExtensionAlreadyLoaded
 from discord_slash import SlashCommand
 from discord_slash.cog_ext import cog_slash
 
-from discordplus import PreMessage
-from discordplus.lib import ExceptionFormat
 from .configs import BotPlusConfig
+from .models import PreMessage
+from ..lib import ExceptionFormat
 
 
 class BotPlus(Bot):
