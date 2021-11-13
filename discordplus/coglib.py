@@ -118,11 +118,13 @@ class CogLib:
         self._TopGGTask.start()
         return self._TopGGTask
 
-    def activate_command_error_handler(self, get_translation_method: Callable[[Union[Context, SlashContext]], Translation] = None):
+    def activate_command_error_handler(self, translation_method: Callable[[CogPlus, Union[Context, SlashContext]], Translation] = None):
         if self._CEH:
             self.bot.remove_cog(self._CEH.qualified_name)
 
         self._CEH = CommandErrorHandlerCog(self.bot)
+        if translation_method is not None:
+            self._CEH.get_translation = translation_method
         self.bot.add_cog(self._CEH)
 
     def disable_command_error_handler(self):
