@@ -31,7 +31,6 @@ class InteractionError(Exception):
             translation = Translation(bot, "Errors", "EN")
 
         premessage = translation.get_premessage(self._name, color=Color.red(), hidden=True, **kwargs)
-        print(premessage.interaction_args)
         await premessage.send(ctx)
 
 
