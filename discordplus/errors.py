@@ -4,7 +4,7 @@ from typing import Union
 
 from discord import Color, File
 from discord.ext.commands import Context
-from discord_slash import SlashContext
+from discord_slash.context import InteractionContext
 from discord_slash.error import SlashCommandError
 
 from .classes import BotPlus
@@ -18,7 +18,7 @@ class InteractionError(Exception):
     _name = None
     _args = ()
 
-    async def send(self, bot: BotPlus, ctx: Union[Context, SlashContext], translation: Translation = None):
+    async def send(self, bot: BotPlus, ctx: Union[Context, InteractionContext], translation: Translation = None):
         if self._name is None:
             raise ValueError('The InteractionError `name` can not be null')
 
