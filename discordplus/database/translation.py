@@ -25,7 +25,17 @@ class Translation(YAMLDatabase):
     def __init__(self, bot: BotPlus, file: str, language: str = 'EN'):
         super().__init__(f'./translations/{language}/{file.lower()}.yml')
         self.bot = bot
-        self.language = language
+        self._language = language
+        self._file = file
+
+    @property
+    def language(self):
+        return self._language
+
+    @language.setter
+    def language(self, value):
+        self._language = value
+        self._file_path = f'./translations/{self._language}/{self._file.lower()}.yml'
 
     def get(self, path, **kwargs):
         value = self.get_data(path)
