@@ -98,8 +98,8 @@ class DynamicButton(Button):
 
 
 class DynamicButtonRequest(DynamicRequest, ABC):
-    def __init__(self, ctx: Union[Context, SlashContext], target: User, *buttons: DynamicButton):
-        super().__init__(RequestEvent.Component, ctx, target)
+    def __init__(self, bot: BotPlus, ctx: Union[Context, SlashContext], target: User, *buttons: DynamicButton):
+        super().__init__(bot, RequestEvent.Component, ctx, target)
         self.buttons = list(buttons)
 
     async def handle_unwanted_request(self, ctx: ComponentContext):
