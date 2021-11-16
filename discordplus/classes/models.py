@@ -7,7 +7,7 @@ from discord_slash.context import InteractionContext
 from ..lib import try_except
 
 messageable_args = {'content': None, 'tts': False, 'embed': None, 'file': None, 'files': None, 'nonce': None, 'delete_after': None, 'allowed_mentions': None, 'reference': None, 'mention_author': None}
-interaction_args = {'content': None, 'tts': False, 'embed': None, 'embeds': None, 'file': None, 'files': None, 'delete_after': None, 'allowed_mentions': None, 'hidden': False, 'components': None}
+interaction_args = {'content': None, 'tts': False, 'embed': None, 'embeds': [], 'file': None, 'files': None, 'delete_after': None, 'allowed_mentions': None, 'hidden': False, 'components': None}
 _all_args = {**messageable_args, **interaction_args}
 
 
@@ -36,7 +36,15 @@ class PreMessage:
         for k, v in interaction_args.items():
             self.interaction_args[k] = kwargs.get(k, v)
 
+        self.validate()
         self._message = None
+
+    def validate(self):
+        skip = {'tts', 'delete_After'}
+        for data in (self.messageable_args, self.interaction_args):
+            for key in data:
+                if not data.get(key, None) and key not in skip:
+                    data.pop(key)
 
     @staticmethod
     def from_data(bot, data: Union[str, dict], **kwargs) -> 'PreMessage':
