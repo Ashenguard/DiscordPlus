@@ -1,7 +1,7 @@
 import os
 from typing import Union, List, Dict
 
-from discord.ext.commands import Bot, Cog, ExtensionAlreadyLoaded
+from discord.ext.commands import Bot, Cog, ExtensionAlreadyLoaded, NoEntryPointError
 from discord_slash import SlashCommand
 from discord_slash.cog_ext import cog_slash
 
@@ -57,18 +57,21 @@ class BotPlus(Bot):
                 continue
             if any(part.startswith('_') for part in file.replace('\\', '/').split('/')):
                 continue
-            if os.path.isdir(file):
-                within_files = [f'{file}/{within_file}' for within_file in os.listdir(file)]
-                self.load_extensions(*within_files)
-            else:
-                path = file.replace('/', '.').replace('\\', '.')
-                if path.endswith('.py'):
-                    path = path[:-3]
 
-                try:
-                    self.load_extension(path)
-                except ExtensionAlreadyLoaded:
-                    self.reload_extension(path)
+            path = file.replace('/', '.').replace('\\', '.')
+            if path.endswith('.py'):
+                path = path[:-3]
+
+            try:
+                self.load_extension(path)
+            except ExtensionAlreadyLoaded:
+                self.reload_extension(path)
+            except NoEntryPointError as e:
+                if os.path.isdir(file):
+                    within_files = [f'{file}/{within_file}' for within_file in os.listdir(file)]
+                    self.load_extensions(*within_files)
+                else:
+                    raise e
 
     @property
     def cogs_status(self):

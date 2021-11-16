@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="discordplus",
-    version="1.4.1",
+    version="1.4.2",
     license='MIT License',
     author="Ashenguard",
     author_email="Ashenguard@agmdev.com",
