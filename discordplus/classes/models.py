@@ -42,7 +42,8 @@ class PreMessage:
     def validate(self):
         skip = {'tts', 'delete_After'}
         for data in (self.messageable_args, self.interaction_args):
-            for key in data:
+            keys = set(data.keys())
+            for key in keys:
                 if not data.get(key, None) and key not in skip:
                     data.pop(key)
 
