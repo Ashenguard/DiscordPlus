@@ -146,8 +146,9 @@ class Database:
         if confirm:
             os.remove(self._file_path)
 
-    def add_property(self, name: str, path: str = None, cast=None, *, get_wrapper: Callable[['Database', Any], Any] = None, set_validator: Callable[['Database', Any], bool] = None):
+    def add_property(self, name: str, path: str = None, cast=None, default=None, *, get_wrapper: Callable[['Database', Any], Any] = None, set_validator: Callable[['Database', Any], bool] = None):
         setattr(self, name, DatabaseProperty(name, path, cast, get_wrapper, set_validator))
+        setattr(self, name, default)
 
     def __setattr__(self, key, value):
         try:
