@@ -37,24 +37,24 @@ DatabaseEncoder.YAML = __YAMLEncoder()
 
 
 class DatabaseProperty:
-    def __init__(self, name, path=None, cast=None, fget_extra: Callable[['Database', Any], Any] = None, fset_validator: Callable[['Database', Any], bool] = None):
+    def __init__(self, name, path=None, cast=None, get_wrapper: Callable[['Database', Any], Any] = None, set_validator: Callable[['Database', Any], bool] = None):
         if path is None:
             path = name
 
         self.name = name
         self.path = path
         self.cast = cast
-        self.fget_extra = fget_extra
-        self.fset_validator = fset_validator
+        self.get_wrapper = get_wrapper
+        self.set_validator = set_validator
 
     def fget(self, database: 'Database'):
-        if self.fget_extra:
-            return self.fget_extra(database, database.get_data(self.path, self.cast))
+        if self.get_wrapper:
+            return self.get_wrapper(database, database.get_data(self.path, self.cast))
         else:
             return database.get_data(self.path, self.cast)
 
     def fset(self, database: 'Database', value):
-        if self.fset_validator is None or self.fset_validator(database, value):
+        if self.set_validator is None or self.set_validator(database, value):
             database.set_data(self.path, value)
         else:
             raise ValueError(f"value '{value}' is not acceptable by '{self.name}'")
@@ -146,8 +146,8 @@ class Database:
         if confirm:
             os.remove(self._file_path)
 
-    def add_property(self, name, path=None, cast=None):
-        setattr(self, name, DatabaseProperty(name, path, cast))
+    def add_property(self, name: str, path: str = None, cast=None, *, get_wrapper: Callable[['Database', Any], Any] = None, set_validator: Callable[['Database', Any], bool] = None):
+        setattr(self, name, DatabaseProperty(name, path, cast, get_wrapper, set_validator))
 
     def __setattr__(self, key, value):
         try:
