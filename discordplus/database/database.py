@@ -1,5 +1,7 @@
 import json
 import os
+from typing import Callable, Any
+
 import yaml
 
 
@@ -32,6 +34,30 @@ class __YAMLEncoder(DatabaseEncoder):
 
 DatabaseEncoder.JSON = __JSONEncoder()
 DatabaseEncoder.YAML = __YAMLEncoder()
+
+
+class DatabaseProperty:
+    def __init__(self, name, path=None, cast=None, fget_extra: Callable[['Database', Any], Any] = None, fset_validator: Callable[['Database', Any], bool] = None):
+        if path is None:
+            path = name
+
+        self.name = name
+        self.path = path
+        self.cast = cast
+        self.fget_extra = fget_extra
+        self.fset_validator = fset_validator
+
+    def fget(self, database: 'Database'):
+        if self.fget_extra:
+            return self.fget_extra(database, database.get_data(self.path, self.cast))
+        else:
+            return database.get_data(self.path, self.cast)
+
+    def fset(self, database: 'Database', value):
+        if self.fset_validator is None or self.fset_validator(database, value):
+            database.set_data(self.path, value)
+        else:
+            raise ValueError(f"value '{value}' is not acceptable by '{self.name}'")
 
 
 class Database:
@@ -78,7 +104,8 @@ class Database:
         return data if cast is None or data is None else cast(data)
 
     def set_data(self, path: str, value, default: bool = False):
-        data = self.load_data().copy()
+        original = self.load_data().copy()
+        data = original
 
         pattern = path.split('.')
 
@@ -89,10 +116,10 @@ class Database:
                 data[key] = {}
                 data = data[key]
 
-        if pattern[-1] not in data.keys() or default is False:
+        if default is False or pattern[-1] not in data.keys():
             data[pattern[-1]] = value
 
-        self.save_data(data)
+        self.save_data(original)
 
     def exists(self, path: str) -> bool:
         return self.get_data(path) is not None
@@ -118,6 +145,27 @@ class Database:
     def delete(self, *, confirm: bool):
         if confirm:
             os.remove(self._file_path)
+
+    def add_property(self, name, path=None, cast=None):
+        setattr(self, name, DatabaseProperty(name, path, cast))
+
+    def __setattr__(self, key, value):
+        try:
+            v = super(Database, self).__getattribute__(key)
+            if isinstance(v, DatabaseProperty):
+                v.fset(self, value)
+                return
+        except Exception:
+            pass
+
+        super(Database, self).__setattr__(key, value)
+
+    def __getattribute__(self, item):
+        v = super(Database, self).__getattribute__(item)
+        if isinstance(v, DatabaseProperty):
+            return v.fget(self)
+        else:
+            return v
 
 
 class JSONDatabase(Database):
